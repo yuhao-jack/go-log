@@ -254,14 +254,15 @@ func (g *GoLog) formatMsg(entry *LogEntity) string {
 		detail = fmt.Sprint(
 			Cyan.WithColorEnd(entry.LogTime.Format(string(DefaultLayout))),
 			fmt.Sprintf("%18s", " ["+Green.WithColorEnd(string(entry.LogLevel))+"] "),
-			fmt.Sprintf("%25s", entry.LogFile+":"+strconv.Itoa(entry.LineNum)+" "),
+			fmt.Sprintf("%30s", entry.LogFile+":"+strconv.Itoa(entry.LineNum)+" \t:"),
 			entry.Msg,
 		)
 	} else {
 		detail = fmt.Sprint(
 			entry.LogTime.Format(string(DefaultLayout)),
 			fmt.Sprintf("%18s", " ["+entry.LogLevel+"] "),
-			fmt.Sprintf("%25s", entry.LogFile+":"+strconv.Itoa(entry.LineNum)+" "),
+			fmt.Sprintf("%30s", entry.LogFile+":"+strconv.Itoa(entry.LineNum)+" \t:"),
+
 			entry.Msg,
 		)
 	}
