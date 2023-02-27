@@ -5,17 +5,18 @@ import (
 	"time"
 )
 
-type LogLevel uint8 //日志级别
+type LogLevel string //日志级别
 
 type TimeLayOut string //时间格式
 
 type Color string //颜色
 
 const (
-	LoglevelDebug LogLevel = 1
-	LoglevelInfo  LogLevel = 2
-	LoglevelWarn  LogLevel = 3
-	LoglevelError LogLevel = 4
+	LoglevelTrace LogLevel = "TRACE"
+	LoglevelDebug LogLevel = "DEBUG"
+	LoglevelInfo  LogLevel = "INFO"
+	LoglevelWarn  LogLevel = "WARN"
+	LoglevelError LogLevel = "ERROR"
 )
 
 const (
@@ -37,23 +38,25 @@ const (
 // 2006为Golang诞生时间，15是下午3点。帮助记忆的方法：1月2日3点4分5秒，2006年，-7时区，正好是1234567
 const DefaultLayout TimeLayOut = "2006-01-02 15:04:05.000"
 
-// String
+// LevelNum
 //
 //	@Description: 获取日志级别字符串
 //	@receiver l
 //	@return string
-func (l LogLevel) String() string {
+func (l LogLevel) LevelNum() int8 {
 	switch l {
+	case LoglevelTrace:
+		return 1
 	case LoglevelDebug:
-		return "DEBUG"
+		return 2
 	case LoglevelInfo:
-		return "INFO"
+		return 3
 	case LoglevelWarn:
-		return "WARN"
+		return 4
 	case LoglevelError:
-		return "ERROR"
+		return 5
 	default:
-		return ""
+		return -1
 	}
 }
 
@@ -94,18 +97,21 @@ func (c Color) WithColorEnd(val string) string {
 // ILogger
 // @Description: 日志的抽象接口
 type ILogger interface {
+	Trace(format string, msg ...any)
 	// Debug Debug级别日志
-	Debug(msg ...any)
+	Debug(format string, msg ...any)
 	// Info Info级别日志
-	Info(msg ...any)
+	Info(format string, msg ...any)
 	// Warn Warn级别日志
-	Warn(msg ...any)
+	Warn(format string, msg ...any)
 	// Error Error级别日志
-	Error(msg ...any)
+	Error(format string, msg ...any)
 	// SetLogLevel 设置日志级别
 	SetLogLevel(loglevel LogLevel)
 	// SetLohWriter 设置输出流
 	SetLohWriter(writer io.Writer)
+	// SetLogFormatter 日志格式化器
+	SetLogFormatter(func(entry *LogEntity) string)
 	// ShortLogEnable 是否使用短日志（true则只包含调用者的相对路径）
 	ShortLogEnable(shortLog bool)
 	// ConsoleEnable 是否允许控制台输出
@@ -114,4 +120,15 @@ type ILogger interface {
 	ColorEnable(color bool)
 	// Destroy 销毁
 	Destroy()
+}
+
+// LogEntity
+// @Description: 日志消息体
+// @Data 2023-02-27 10:07:03
+type LogEntity struct {
+	LogTime  time.Time //日志时间
+	LogLevel LogLevel  //日志级别
+	LogFile  string    //产生日志的文件
+	LineNum  int       //行号
+	Msg      string    // 日志内容
 }

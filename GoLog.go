@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // GoLogConfig
@@ -17,18 +18,21 @@ type GoLogConfig struct {
 	MsgChan        chan string `json:"msg_chan"`         //消息管道（缓冲区）
 	Writer         io.Writer   `json:"-"`                //输出流 可以使用文件、网络
 	ConsoleEnable  bool        `json:"console_enable"`   //控制台输出
+	ColorEnable    bool        //颜色输出
 }
 
 // GoLog
 // @Description: GoLog 实体类
 type GoLog struct {
 	sync.RWMutex
-	logLevel       LogLevel       //日志级别
-	shortLogEnable bool           //是否使用短日志
-	msgChan        chan string    //消息管道（缓冲区）
-	writer         io.Writer      //输出流
-	consoleEnable  bool           //控制台输出
-	waiter         sync.WaitGroup //阻塞
+	logLevel       LogLevel                      //日志级别
+	shortLogEnable bool                          //是否使用短日志
+	msgChan        chan string                   //消息管道（缓冲区）
+	writer         io.Writer                     //输出流
+	consoleEnable  bool                          //控制台输出
+	colorEnable    bool                          //颜色输出
+	waiter         sync.WaitGroup                //阻塞
+	logFormatter   func(entry *LogEntity) string //格式化器
 }
 
 // NewGoLog
@@ -44,50 +48,115 @@ func NewGoLog(config *GoLogConfig) ILogger {
 		msgChan:        config.MsgChan,
 		writer:         nil,
 		consoleEnable:  config.ConsoleEnable,
+		colorEnable:    config.ColorEnable,
 		waiter:         sync.WaitGroup{},
 	}
-	g.waiter.Add(1)
+
 	go g.consumeMsgChan()
 	return g
 }
-
-func (g *GoLog) Debug(msg ...any) {
-	if g.logLevel > LoglevelDebug {
+func (g *GoLog) Trace(format string, msg ...any) {
+	if g.logLevel.LevelNum() > LoglevelTrace.LevelNum() {
 		return
 	}
 	if _, file, line, ok := runtime.Caller(1); ok {
-		data := fmt.Sprint(msg)
-		g.msgChan <- g.formatMsg(LoglevelDebug.String(), file, strconv.Itoa(line), data[1:len(data)-1])
+		data := fmt.Sprintf(format, msg...)
+		entity := LogEntity{
+			LogTime:  time.Now(),
+			LogLevel: LoglevelTrace,
+			LogFile:  g.fileIdx(file),
+			LineNum:  line,
+			Msg:      data,
+		}
+		if g.logFormatter != nil {
+			g.msgChan <- g.logFormatter(&entity)
+		} else {
+			g.msgChan <- g.formatMsg(&entity)
+		}
 	}
 }
 
-func (g *GoLog) Info(msg ...any) {
-	if g.logLevel > LoglevelInfo {
+func (g *GoLog) Debug(format string, msg ...any) {
+	if g.logLevel.LevelNum() > LoglevelDebug.LevelNum() {
 		return
 	}
 	if _, file, line, ok := runtime.Caller(1); ok {
-		data := fmt.Sprint(msg)
-		g.msgChan <- g.formatMsg(LoglevelInfo.String(), file, strconv.Itoa(line), data[1:len(data)-1])
+		data := fmt.Sprintf(format, msg...)
+		entity := LogEntity{
+			LogTime:  time.Now(),
+			LogLevel: LoglevelDebug,
+			LogFile:  g.fileIdx(file),
+			LineNum:  line,
+			Msg:      data,
+		}
+		if g.logFormatter != nil {
+			g.msgChan <- g.logFormatter(&entity)
+		} else {
+			g.msgChan <- g.formatMsg(&entity)
+		}
 	}
 }
 
-func (g *GoLog) Warn(msg ...interface{}) {
-	if g.logLevel > LoglevelWarn {
+func (g *GoLog) Info(format string, msg ...any) {
+	if g.logLevel.LevelNum() > LoglevelInfo.LevelNum() {
 		return
 	}
 	if _, file, line, ok := runtime.Caller(1); ok {
-		data := fmt.Sprint(msg)
-		g.msgChan <- g.formatMsg(LoglevelWarn.String(), file, strconv.Itoa(line), data[1:len(data)-1])
+		data := fmt.Sprintf(format, msg...)
+		entity := LogEntity{
+			LogTime:  time.Now(),
+			LogLevel: LoglevelInfo,
+			LogFile:  g.fileIdx(file),
+			LineNum:  line,
+			Msg:      data,
+		}
+		if g.logFormatter != nil {
+			g.msgChan <- g.logFormatter(&entity)
+		} else {
+			g.msgChan <- g.formatMsg(&entity)
+		}
 	}
 }
 
-func (g *GoLog) Error(msg ...interface{}) {
-	if g.logLevel > LoglevelError {
+func (g *GoLog) Warn(format string, msg ...interface{}) {
+	if g.logLevel.LevelNum() > LoglevelWarn.LevelNum() {
 		return
 	}
 	if _, file, line, ok := runtime.Caller(1); ok {
-		data := fmt.Sprint(msg)
-		g.msgChan <- g.formatMsg(LoglevelError.String(), file, strconv.Itoa(line), data[1:len(data)-1])
+		data := fmt.Sprintf(format, msg...)
+		entity := LogEntity{
+			LogTime:  time.Now(),
+			LogLevel: LoglevelWarn,
+			LogFile:  g.fileIdx(file),
+			LineNum:  line,
+			Msg:      data,
+		}
+		if g.logFormatter != nil {
+			g.msgChan <- g.logFormatter(&entity)
+		} else {
+			g.msgChan <- g.formatMsg(&entity)
+		}
+	}
+}
+
+func (g *GoLog) Error(format string, msg ...interface{}) {
+	if g.logLevel.LevelNum() > LoglevelError.LevelNum() {
+		return
+	}
+	if _, file, line, ok := runtime.Caller(1); ok {
+		data := fmt.Sprintf(format, msg...)
+		entity := LogEntity{
+			LogTime:  time.Now(),
+			LogLevel: LoglevelError,
+			LogFile:  g.fileIdx(file),
+			LineNum:  line,
+			Msg:      data,
+		}
+		if g.logFormatter != nil {
+			g.msgChan <- g.logFormatter(&entity)
+		} else {
+			g.msgChan <- g.formatMsg(&entity)
+		}
 	}
 }
 
@@ -101,6 +170,12 @@ func (g *GoLog) SetLohWriter(writer io.Writer) {
 	g.RLock()
 	defer g.RUnlock()
 	g.writer = writer
+}
+
+func (g *GoLog) SetLogFormatter(f func(entry *LogEntity) string) {
+	g.RLock()
+	defer g.RUnlock()
+	g.logFormatter = f
 }
 
 func (g *GoLog) ShortLogEnable(shortLog bool) {
@@ -118,7 +193,7 @@ func (g *GoLog) ConsoleEnable(console bool) {
 func (g *GoLog) ColorEnable(color bool) {
 	g.RLock()
 	defer g.RUnlock()
-	g.consoleEnable = color
+	g.colorEnable = color
 }
 
 func (g *GoLog) Destroy() {
@@ -136,9 +211,25 @@ func (g *GoLog) Destroy() {
 //	@param line
 //	@param msg
 //	@return string
-func (g *GoLog) formatMsg(level, file, line, msg string) string {
-	detail := fmt.Sprint(Cyan.WithColorEnd(DefaultLayout.String()), " ", level, " ", file, ":", line, " ", msg)
-	return detail
+func (g *GoLog) formatMsg(entry *LogEntity) string {
+	var detail string
+	if g.colorEnable {
+		detail = fmt.Sprint(
+			Cyan.WithColorEnd(entry.LogTime.Format(string(DefaultLayout))),
+			fmt.Sprintf("%18s", " ["+Green.WithColorEnd(string(entry.LogLevel))+"] "),
+			fmt.Sprintf("%25s", entry.LogFile+":"+strconv.Itoa(entry.LineNum)+" "),
+			entry.Msg,
+		)
+	} else {
+		detail = fmt.Sprint(
+			entry.LogTime.Format(string(DefaultLayout)),
+			fmt.Sprintf("%18s", " ["+entry.LogLevel+"] "),
+			fmt.Sprintf("%25s", entry.LogFile+":"+strconv.Itoa(entry.LineNum)+" "),
+			entry.Msg,
+		)
+	}
+
+	return detail + "\n"
 }
 
 // fileIdx
@@ -167,13 +258,13 @@ func (g *GoLog) fileIdx(file string) string {
 //	@Description: 消费消息管道的消息
 //	@receiver g
 func (g *GoLog) consumeMsgChan() {
-
+	g.waiter.Add(1)
 	for {
 		select {
 		case msg, ok := <-g.msgChan:
 			if !ok { //此时说明管道已经关闭
 				g.waiter.Done()
-				break
+				return
 			}
 			if g.consoleEnable {
 				_, _ = os.Stdout.WriteString(msg)
