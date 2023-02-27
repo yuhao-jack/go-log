@@ -3,7 +3,8 @@ package test
 import (
 	"encoding/json"
 	"fmt"
-	go_log "go-log"
+	go_log "github.com/yuhao-jack/go-log"
+
 	"os"
 	"testing"
 	"time"
