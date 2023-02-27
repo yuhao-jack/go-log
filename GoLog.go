@@ -1,8 +1,10 @@
 package go_log
 
 import (
+	"compress/gzip"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"runtime"
 	"strconv"
@@ -14,16 +16,16 @@ import (
 // GoLogConfig
 // @Description:GoLog 配置类，当RollLogByTime、RollLogBySize二者都不为空时只会生效一个，优选使用RollLogByTime
 type GoLogConfig struct {
-	LogLevel       LogLevel      `json:"log_level"`        //日志级别
-	ShortLogEnable bool          `json:"short_log_enable"` //是否使用短日志
-	MsgChan        chan string   `json:"msg_chan"`         //消息管道（缓冲区）
-	Writer         io.Writer     `json:"-"`                //输出流 可以使用文件、网络
-	ConsoleEnable  bool          `json:"console_enable"`   //控制台输出
-	ColorEnable    bool          `json:"color_enable"`     //颜色输出
-	LogDir         string        `json:"log_dir"`          //日志存放目录
-	LogName        string        `json:"log_name"`         //日志文件名
-	RollLogByTime  time.Duration `json:"roll_log_by_time"` //根据时间滚动 如:5m表示五分钟滚动一个，为了便于管理这里会把时间整块分，如16:56:23则会写进16:55:00这个时间块的文件中
-	RollLogBySize  int64         `json:"roll_log_by_size"` //根据文件大小滚动，单位KB，
+	LogLevel       LogLevel    `json:"log_level"`        //日志级别
+	ShortLogEnable bool        `json:"short_log_enable"` //是否使用短日志
+	MsgChan        chan string `json:"msg_chan"`         //消息管道（缓冲区）
+	Writer         io.Writer   `json:"-"`                //输出流 可以使用文件、网络
+	ConsoleEnable  bool        `json:"console_enable"`   //控制台输出
+	ColorEnable    bool        `json:"color_enable"`     //颜色输出
+	LogDir         string      `json:"log_dir"`          //日志存放目录
+	LogName        string      `json:"log_name"`         //日志文件名
+	RollLogByTime  string      `json:"roll_log_by_time"` //根据时间滚动 如:5m表示五分钟滚动一个，为了便于管理这里会把时间整块分，如16:56:23则会写进16:55:00这个时间块的文件中
+	RollLogBySize  int64       `json:"roll_log_by_size"` //根据文件大小滚动，单位KB，
 
 }
 
@@ -39,10 +41,10 @@ type GoLog struct {
 	colorEnable    bool                          //颜色输出
 	waiter         sync.WaitGroup                //阻塞
 	logFormatter   func(entry *LogEntity) string //格式化器
-	logDir         string                        `json:"log_dir"`          //日志存放目录
-	logName        string                        `json:"log_name"`         //日志文件名
-	rollLogByTime  time.Duration                 `json:"roll_log_by_time"` //根据时间滚动 如:5m表示五分钟滚动一个，为了便于管理这里会把时间整块分，如16:56:23则会写进16:55:00这个时间块的文件中
-	rollLogBySize  int64                         `json:"roll_log_by_size"` //根据文件大小滚动，单位KB，
+	logDir         string                        //日志存放目录
+	logName        string                        //日志文件名
+	rollLogByTime  time.Duration                 //根据时间滚动 如:5m表示五分钟滚动一个，为了便于管理这里会把时间整块分，如16:56:23则会写进16:55:00这个时间块的文件中
+	rollLogBySize  int64                         //根据文件大小滚动，单位KB，
 	logFile        *os.File                      //日志文件句柄
 	lastTimeBlock  string                        //文件最后变更时间的时间块
 	logFileSize    int64                         //当前日志文件的大小
@@ -50,7 +52,7 @@ type GoLog struct {
 
 // DefaultGoLog
 //
-//	@Description: 根据默认配置创建一个对象实例
+//	@Description: 根据默认配置创建一个对象实例 Info 级别
 //	@Author yuhao
 //	@Data 2023-02-27 14:25:54
 //	@return *GoLog
@@ -74,7 +76,7 @@ var singleGoLog *GoLog
 
 // GetSingleGoLog
 //
-//	@Description: 获取单例GoLog实例
+//	@Description: 获取单例GoLog实例 Info 级别
 //	@Author yuhao
 //	@Data 2023-02-27 14:29:10
 //	@return *GoLog
@@ -91,6 +93,7 @@ func GetSingleGoLog() *GoLog {
 //	@param config
 //	@return *GoLog
 func NewGoLog(config *GoLogConfig) ILogger {
+
 	g := &GoLog{
 		RWMutex:        sync.RWMutex{},
 		logLevel:       config.LogLevel,
@@ -100,8 +103,17 @@ func NewGoLog(config *GoLogConfig) ILogger {
 		consoleEnable:  config.ConsoleEnable,
 		colorEnable:    config.ColorEnable,
 		waiter:         sync.WaitGroup{},
+		logDir:         config.LogDir,
+		logName:        config.LogName,
+		rollLogBySize:  config.RollLogBySize,
 	}
-
+	if config.RollLogByTime != "" {
+		duration, err := time.ParseDuration(config.RollLogByTime)
+		if err != nil {
+			panic("Invalid time:" + config.RollLogByTime)
+		}
+		g.rollLogByTime = duration
+	}
 	go g.consumeMsgChan()
 	return g
 }
@@ -279,14 +291,14 @@ func (g *GoLog) formatMsg(entry *LogEntity) string {
 		detail = fmt.Sprint(
 			Cyan.WithColorEnd(entry.LogTime.Format(string(DefaultLayout))),
 			fmt.Sprintf("%18s", " ["+Green.WithColorEnd(string(entry.LogLevel))+"] "),
-			fmt.Sprintf("%30s", entry.LogFile+":"+strconv.Itoa(entry.LineNum)+" \t:"),
+			fmt.Sprintf("%30s", entry.LogFile+":"+strconv.Itoa(entry.LineNum)+" :\t"),
 			entry.Msg,
 		)
 	} else {
 		detail = fmt.Sprint(
 			entry.LogTime.Format(string(DefaultLayout)),
 			fmt.Sprintf("%18s", " ["+entry.LogLevel+"] "),
-			fmt.Sprintf("%30s", entry.LogFile+":"+strconv.Itoa(entry.LineNum)+" \t:"),
+			fmt.Sprintf("%30s", entry.LogFile+":"+strconv.Itoa(entry.LineNum)+" :\t"),
 			entry.Msg,
 		)
 	}
@@ -340,7 +352,7 @@ func (g *GoLog) consumeMsgChan() {
 			if g.writer != nil {
 				_, _ = g.writer.Write([]byte(msg))
 			}
-			if g.logName == "" {
+			if g.logDir == "" || g.logName == "" {
 				continue
 			}
 			file := g.getLogFile()
@@ -356,6 +368,11 @@ func (g *GoLog) consumeMsgChan() {
 	}
 }
 
+// getLogFile
+//
+//	@Description: 获取文件句柄
+//	@receiver g
+//	@return *os.File
 func (g *GoLog) getLogFile() *os.File {
 	fileInfo, err := os.Stat(g.logName)
 	if os.IsNotExist(err) { //文件不存在
@@ -364,58 +381,138 @@ func (g *GoLog) getLogFile() *os.File {
 			_, _ = os.Stderr.WriteString("create logfile " + g.logName + " failed,err:" + err.Error())
 			return nil
 		}
+		g.logFile = file
 		return file
 	}
+	//  在同一个时间块但是还没打开
+	if g.logFile == nil {
+		file, err := os.Open(g.logName)
+		if err != nil {
+			_, _ = os.Stderr.WriteString("open logfile " + g.logName + " failed,err:" + err.Error())
+			return nil
+		}
+		g.logFile = file
+	}
+	//  文件存在 根据时间滚动文件
 	if g.rollLogByTime != 0 {
-		now := time.Now().Unix()
-		duration := int64(g.rollLogByTime.Seconds())
-		format := time.Unix(now/duration*duration, 0).Format(string(DateTimeLayout2))
-		if g.lastTimeBlock == "" {
-			g.lastTimeBlock = fileInfo.ModTime().Format(string(DateTimeLayout2))
-		}
-		if g.logFile == nil {
-			if g.lastTimeBlock != format {
-				err := os.Rename(g.logName, g.logName+"-"+g.lastTimeBlock)
-
-				if err != nil {
-					_, _ = os.Stderr.WriteString("Rename logfile " + g.logName + " failed,err:" + err.Error())
-					return nil
-				}
-				go func() {}() //TODO 这里起一个协程去压缩
-				g.lastTimeBlock = format
-				file, err := os.Create(g.logName)
-				if err != nil {
-					_, _ = os.Stderr.WriteString("create logfile " + g.logName + " failed,err:" + err.Error())
-					return nil
-				}
-				g.logFile = file
-				return file
-			}
-		}
-
-		return g.logFile
+		return g.getFileByTime(fileInfo)
+	}
+	//  文件存在 根据文件的大小滚动文件
+	if g.rollLogBySize != 0 {
+		return g.getFileBySize(fileInfo)
 	}
 
-	if g.rollLogBySize != 0 {
-		if g.logFile == nil {
-			sizeKB := fileInfo.Size() / 1024
-			if g.rollLogBySize < sizeKB {
-				cnt := 1
-				err := os.Rename(g.logName, g.logName+"-"+strconv.Itoa(cnt))
-				if err != nil {
-					_, _ = os.Stderr.WriteString("Rename logfile " + g.logName + " failed,err:" + err.Error())
-					return nil
-				}
-				go func() {}() //TODO 这里起一个协程去压缩
-				file, err := os.Create(g.logName)
-				if err != nil {
-					_, _ = os.Stderr.WriteString("create logfile " + g.logName + " failed,err:" + err.Error())
-					return nil
-				}
-				g.logFile = file
-				return file
+	return g.logFile
+}
+
+// getFileByTime
+//
+//	@Description: 根据时间滚动文件
+//	@receiver g
+//	@param fileInfo
+//	@return *os.File
+func (g *GoLog) getFileByTime(fileInfo os.FileInfo) *os.File {
+	now := time.Now().Unix()
+	duration := int64(g.rollLogByTime.Seconds())
+	format := time.Unix(now/duration*duration, 0).Format(string(DateTimeLayout4))
+	if g.lastTimeBlock == "" {
+		g.lastTimeBlock = fileInfo.ModTime().Format(string(DateTimeLayout4))
+	}
+	//  不在同一时间块
+	if g.lastTimeBlock != format {
+
+		err := Compress([]*os.File{g.logFile}, g.logName+"-"+g.lastTimeBlock+".zip")
+		if err != nil {
+			_, _ = os.Stderr.WriteString("Compress logfile " + g.logName + " failed,err:" + err.Error())
+			return nil
+		}
+		go func() {
+			bytes, err := ioutil.ReadFile(g.logName + "-" + g.lastTimeBlock)
+			if err != nil {
+				_, _ = os.Stderr.WriteString("ReadFile logfile " + g.logName + "-" + g.lastTimeBlock + " failed,err:" + err.Error())
+				return
+			}
+			targetFile, err := os.Create(g.logName + "-" + g.lastTimeBlock + ".zip")
+			_, _ = os.Stderr.WriteString("Create logfile " + g.logName + "-" + g.lastTimeBlock + ".zip" + " failed,err:" + err.Error())
+			if err != nil {
+				return
+			}
+			gzipWriter := gzip.NewWriter(targetFile)
+			_, _ = gzipWriter.Write(bytes)
+			_ = targetFile.Close()
+		}()
+		// 如果文件被打开需要关闭
+		if g.logFile != nil {
+			_ = g.logFile.Close()
+			g.logFile = nil
+		}
+
+		file, err := os.Create(g.logName)
+		if err != nil {
+			_, _ = os.Stderr.WriteString("create logfile " + g.logName + " failed,err:" + err.Error())
+			return nil
+		}
+		g.lastTimeBlock = format
+		g.logFile = file
+		return file
+	}
+
+	return g.logFile
+}
+
+// getFileBySize
+//
+//	@Description: 根据文件大小滚动文件
+//	@receiver g
+//	@param fileInfo
+//	@return *os.File
+func (g *GoLog) getFileBySize(fileInfo os.FileInfo) *os.File {
+	sizeKB := fileInfo.Size() / 1024
+	// 文件大小超过滚动的大小了需要重命名滚动
+	if g.rollLogBySize < sizeKB {
+		fileInfos, err := ioutil.ReadDir(g.logDir)
+		if err != nil {
+			_, _ = os.Stderr.WriteString("ReadDir " + g.logDir + " failed,err:" + err.Error())
+			return nil
+		}
+		cnt := 1 //获取文件夹中已经存在多少logName文件了
+		for _, info := range fileInfos {
+			if strings.HasPrefix(info.Name(), g.logName) && strings.HasSuffix(info.Name(), ".zip") {
+				cnt++
 			}
 		}
+		err = os.Rename(g.logName, g.logName+"-"+strconv.Itoa(cnt))
+		if err != nil {
+			_, _ = os.Stderr.WriteString("Rename logfile " + g.logName + " failed,err:" + err.Error())
+			return nil
+		}
+		go func() {
+			bytes, err := ioutil.ReadFile(g.logName + "-" + strconv.Itoa(cnt))
+			if err != nil {
+				_, _ = os.Stderr.WriteString("ReadFile logfile " + g.logName + "-" + strconv.Itoa(cnt) + " failed,err:" + err.Error())
+				return
+			}
+			targetFile, err := os.Create(g.logName + "-" + strconv.Itoa(cnt) + ".zip")
+			_, _ = os.Stderr.WriteString("Create logfile " + g.logName + "-" + strconv.Itoa(cnt) + ".zip" + " failed,err:" + err.Error())
+			if err != nil {
+				return
+			}
+			gzipWriter := gzip.NewWriter(targetFile)
+			_, _ = gzipWriter.Write(bytes)
+			_ = targetFile.Close()
+		}()
+		// 如果文件被打开需要关闭
+		if g.logFile != nil {
+			_ = g.logFile.Close()
+			g.logFile = nil
+		}
+		file, err := os.Create(g.logName)
+		if err != nil {
+			_, _ = os.Stderr.WriteString("create logfile " + g.logName + " failed,err:" + err.Error())
+			return nil
+		}
+		g.logFile = file
+		return file
 	}
 	return g.logFile
 }

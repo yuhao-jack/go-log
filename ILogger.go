@@ -44,6 +44,7 @@ const (
 	DateTimeLayout1 TimeLayOut = "2006-01-02-15-04-05"
 	DateTimeLayout2 TimeLayOut = "20060102150405"
 	DateTimeLayout3 TimeLayOut = "20060102_150405"
+	DateTimeLayout4 TimeLayOut = "200601021504"
 )
 
 // LevelNum
