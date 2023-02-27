@@ -42,7 +42,7 @@ type GoLog struct {
 //	@Data 2023-02-27 14:25:54
 //	@return *GoLog
 func DefaultGoLog() *GoLog {
-	return &GoLog{
+	g := &GoLog{
 		RWMutex:        sync.RWMutex{},
 		logLevel:       LoglevelInfo,
 		shortLogEnable: true,
@@ -52,6 +52,8 @@ func DefaultGoLog() *GoLog {
 		colorEnable:    true,
 		waiter:         sync.WaitGroup{},
 	}
+	go g.consumeMsgChan()
+	return g
 }
 
 var once = sync.Once{}
