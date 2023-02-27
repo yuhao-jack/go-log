@@ -35,6 +35,41 @@ type GoLog struct {
 	logFormatter   func(entry *LogEntity) string //格式化器
 }
 
+// DefaultGoLog
+//
+//	@Description: 根据默认配置创建一个对象实例
+//	@Author yuhao
+//	@Data 2023-02-27 14:25:54
+//	@return *GoLog
+func DefaultGoLog() *GoLog {
+	return &GoLog{
+		RWMutex:        sync.RWMutex{},
+		logLevel:       LoglevelInfo,
+		shortLogEnable: true,
+		msgChan:        make(chan string, 256),
+		writer:         nil,
+		consoleEnable:  true,
+		colorEnable:    true,
+		waiter:         sync.WaitGroup{},
+	}
+}
+
+var once = sync.Once{}
+var singleGoLog *GoLog
+
+// GetSingleGoLog
+//
+//	@Description: 获取单例GoLog实例
+//	@Author yuhao
+//	@Data 2023-02-27 14:29:10
+//	@return *GoLog
+func GetSingleGoLog() *GoLog {
+	once.Do(func() {
+		singleGoLog = DefaultGoLog()
+	})
+	return singleGoLog
+}
+
 // NewGoLog
 //
 //	@Description: 创建日志
