@@ -34,9 +34,17 @@ const (
 	YellowBold  Color = "\033[33;1m"
 )
 
-// DefaultLayout 默认日志时间格式
-// 2006为Golang诞生时间，15是下午3点。帮助记忆的方法：1月2日3点4分5秒，2006年，-7时区，正好是1234567
-const DefaultLayout TimeLayOut = "2006-01-02 15:04:05.000"
+const (
+
+	// DefaultLayout 默认日志时间格式
+	// 2006为Golang诞生时间，15是下午3点。帮助记忆的方法：1月2日3点4分5秒，2006年，-7时区，正好是1234567
+	DefaultLayout   TimeLayOut = "2006-01-02 15:04:05.000"
+	DateLayout      TimeLayOut = "2006-01-02"
+	TimeLayout      TimeLayOut = "15:04:05"
+	DateTimeLayout1 TimeLayOut = "2006-01-02-15-04-05"
+	DateTimeLayout2 TimeLayOut = "20060102150405"
+	DateTimeLayout3 TimeLayOut = "20060102_150405"
+)
 
 // LevelNum
 //

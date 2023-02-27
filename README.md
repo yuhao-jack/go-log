@@ -2,6 +2,15 @@
 
 > 是一个简单明了的日志框架。我们可以使用它来替换不易使用的内置日志框架。这一框架正在不断改进中，如有疑问可Email:154826195@qq.com
 
+#### 注意
+
+> 为保证缓冲区的日志不丢失，获取完日志实例应该使用`defer`调用`Destroy()`方法，如：
+>
+> ```
+> defaultGoLog := go_log.DefaultGoLog()
+> defer defaultGoLog.Destroy()
+> ```
+
 #### 快速开始
 
 #### 安装
@@ -46,4 +55,6 @@ func logFormatter(entry *go_log.LogEntity) string {
 }
 
 ```
+
+[点我查看更多示例参考](./test/demo_test.go)
 
