@@ -55,8 +55,13 @@ func logFormatter(entry *go_log.LogEntity) string {
 //	@param t
 func TestDemo2(t *testing.T) {
 	singleGoLog := go_log.GetSingleGoLog()
+	singleGoLog.SetLogLevel(go_log.LoglevelTrace)
 	defer singleGoLog.Destroy()
+	singleGoLog.Trace("hello world")
+	singleGoLog.Debug("hello world")
 	singleGoLog.Info("hello world")
+	singleGoLog.Warn("hello world")
+	singleGoLog.Error("hello world")
 }
 
 // TestDemo3

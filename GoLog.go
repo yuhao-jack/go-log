@@ -288,9 +288,24 @@ func (g *GoLog) Destroy() {
 func (g *GoLog) formatMsg(entry *LogEntity) string {
 	var detail string
 	if g.colorEnable {
+		var color Color
+		switch entry.LogLevel {
+		case LoglevelTrace:
+			color = Blue
+		case LoglevelDebug:
+			color = Magenta
+		case LoglevelInfo:
+			color = Green
+		case LoglevelWarn:
+			color = Yellow
+		case LoglevelError:
+			color = Red
+		default:
+			color = White
+		}
 		detail = fmt.Sprint(
 			Cyan.WithColorEnd(entry.LogTime.Format(string(DefaultLayout))),
-			fmt.Sprintf("%18s", " ["+Green.WithColorEnd(string(entry.LogLevel))+"] "),
+			fmt.Sprintf("%18s", " ["+color.WithColorEnd(string(entry.LogLevel))+"] "),
 			fmt.Sprintf("%30s", entry.LogFile+":"+strconv.Itoa(entry.LineNum)+":\t"),
 			entry.Msg,
 		)
