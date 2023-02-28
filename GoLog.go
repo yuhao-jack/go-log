@@ -1,7 +1,6 @@
 package go_log
 
 import (
-	"compress/gzip"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -48,6 +47,7 @@ type GoLog struct {
 	logFile        *os.File                      //日志文件句柄
 	lastTimeBlock  string                        //文件最后变更时间的时间块
 	logFileSize    int64                         //当前日志文件的大小
+	compressChan   chan string                   //压缩文件信号管道，将要压缩的文件名丢入管道
 }
 
 // DefaultGoLog
@@ -291,14 +291,14 @@ func (g *GoLog) formatMsg(entry *LogEntity) string {
 		detail = fmt.Sprint(
 			Cyan.WithColorEnd(entry.LogTime.Format(string(DefaultLayout))),
 			fmt.Sprintf("%18s", " ["+Green.WithColorEnd(string(entry.LogLevel))+"] "),
-			fmt.Sprintf("%30s", entry.LogFile+":"+strconv.Itoa(entry.LineNum)+" :\t"),
+			fmt.Sprintf("%30s", entry.LogFile+":"+strconv.Itoa(entry.LineNum)+":\t"),
 			entry.Msg,
 		)
 	} else {
 		detail = fmt.Sprint(
 			entry.LogTime.Format(string(DefaultLayout)),
 			fmt.Sprintf("%18s", " ["+entry.LogLevel+"] "),
-			fmt.Sprintf("%30s", entry.LogFile+":"+strconv.Itoa(entry.LineNum)+" :\t"),
+			fmt.Sprintf("%30s", entry.LogFile+":"+strconv.Itoa(entry.LineNum)+":\t"),
 			entry.Msg,
 		)
 	}
@@ -338,7 +338,10 @@ func (g *GoLog) consumeMsgChan() {
 		g.SetLogDir(g.logDir + "/")
 		g.setLogName(g.logDir + g.logName)
 	}
-
+	if g.compressChan == nil {
+		g.compressChan = make(chan string, 2)
+	}
+	go g.compressLogFile()
 	for {
 		select {
 		case msg, ok := <-g.msgChan:
@@ -368,6 +371,29 @@ func (g *GoLog) consumeMsgChan() {
 	}
 }
 
+// compressLogFile
+//
+//	@Description: 异步压缩文件
+//	@receiver g
+//	@Author yuhao
+//	@Data 2023-02-28 11:30:47
+func (g *GoLog) compressLogFile() {
+
+	for s := range g.compressChan {
+		file, err := os.Open(s)
+		if err != nil {
+			_, _ = os.Stderr.WriteString("open file " + s + " failed,err:" + err.Error())
+			continue
+		}
+		err = Compress([]*os.File{file}, s+".zip")
+		if err != nil {
+			_, _ = os.Stderr.WriteString("Compress file " + s + ".zip" + " failed,err:" + err.Error())
+		}
+		_ = os.Remove(s)
+	}
+
+}
+
 // getLogFile
 //
 //	@Description: 获取文件句柄
@@ -386,7 +412,7 @@ func (g *GoLog) getLogFile() *os.File {
 	}
 	//  在同一个时间块但是还没打开
 	if g.logFile == nil {
-		file, err := os.Open(g.logName)
+		file, err := os.OpenFile(g.logName, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
 			_, _ = os.Stderr.WriteString("open logfile " + g.logName + " failed,err:" + err.Error())
 			return nil
@@ -420,33 +446,17 @@ func (g *GoLog) getFileByTime(fileInfo os.FileInfo) *os.File {
 	}
 	//  不在同一时间块
 	if g.lastTimeBlock != format {
-
-		err := Compress([]*os.File{g.logFile}, g.logName+"-"+g.lastTimeBlock+".zip")
-		if err != nil {
-			_, _ = os.Stderr.WriteString("Compress logfile " + g.logName + " failed,err:" + err.Error())
-			return nil
-		}
-		go func() {
-			bytes, err := ioutil.ReadFile(g.logName + "-" + g.lastTimeBlock)
-			if err != nil {
-				_, _ = os.Stderr.WriteString("ReadFile logfile " + g.logName + "-" + g.lastTimeBlock + " failed,err:" + err.Error())
-				return
-			}
-			targetFile, err := os.Create(g.logName + "-" + g.lastTimeBlock + ".zip")
-			_, _ = os.Stderr.WriteString("Create logfile " + g.logName + "-" + g.lastTimeBlock + ".zip" + " failed,err:" + err.Error())
-			if err != nil {
-				return
-			}
-			gzipWriter := gzip.NewWriter(targetFile)
-			_, _ = gzipWriter.Write(bytes)
-			_ = targetFile.Close()
-		}()
 		// 如果文件被打开需要关闭
 		if g.logFile != nil {
 			_ = g.logFile.Close()
 			g.logFile = nil
 		}
-
+		err := os.Rename(g.logName, g.logName+"-"+g.lastTimeBlock)
+		if err != nil {
+			_, _ = os.Stderr.WriteString("Rename " + g.logName + " failed,err:" + err.Error())
+			return nil
+		}
+		g.compressChan <- g.logName + "-" + g.lastTimeBlock
 		file, err := os.Create(g.logName)
 		if err != nil {
 			_, _ = os.Stderr.WriteString("create logfile " + g.logName + " failed,err:" + err.Error())
@@ -470,6 +480,11 @@ func (g *GoLog) getFileBySize(fileInfo os.FileInfo) *os.File {
 	sizeKB := fileInfo.Size() / 1024
 	// 文件大小超过滚动的大小了需要重命名滚动
 	if g.rollLogBySize < sizeKB {
+		// 如果文件被打开需要关闭
+		if g.logFile != nil {
+			_ = g.logFile.Close()
+			g.logFile = nil
+		}
 		fileInfos, err := ioutil.ReadDir(g.logDir)
 		if err != nil {
 			_, _ = os.Stderr.WriteString("ReadDir " + g.logDir + " failed,err:" + err.Error())
@@ -481,31 +496,14 @@ func (g *GoLog) getFileBySize(fileInfo os.FileInfo) *os.File {
 				cnt++
 			}
 		}
+
 		err = os.Rename(g.logName, g.logName+"-"+strconv.Itoa(cnt))
 		if err != nil {
-			_, _ = os.Stderr.WriteString("Rename logfile " + g.logName + " failed,err:" + err.Error())
+			_, _ = os.Stderr.WriteString("Rename " + g.logName + " failed,err:" + err.Error())
 			return nil
 		}
-		go func() {
-			bytes, err := ioutil.ReadFile(g.logName + "-" + strconv.Itoa(cnt))
-			if err != nil {
-				_, _ = os.Stderr.WriteString("ReadFile logfile " + g.logName + "-" + strconv.Itoa(cnt) + " failed,err:" + err.Error())
-				return
-			}
-			targetFile, err := os.Create(g.logName + "-" + strconv.Itoa(cnt) + ".zip")
-			_, _ = os.Stderr.WriteString("Create logfile " + g.logName + "-" + strconv.Itoa(cnt) + ".zip" + " failed,err:" + err.Error())
-			if err != nil {
-				return
-			}
-			gzipWriter := gzip.NewWriter(targetFile)
-			_, _ = gzipWriter.Write(bytes)
-			_ = targetFile.Close()
-		}()
-		// 如果文件被打开需要关闭
-		if g.logFile != nil {
-			_ = g.logFile.Close()
-			g.logFile = nil
-		}
+
+		g.compressChan <- g.logName + "-" + strconv.Itoa(cnt)
 		file, err := os.Create(g.logName)
 		if err != nil {
 			_, _ = os.Stderr.WriteString("create logfile " + g.logName + " failed,err:" + err.Error())

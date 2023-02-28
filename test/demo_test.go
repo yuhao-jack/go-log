@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	go_log "github.com/yuhao-jack/go-log"
+	"log"
 	"os"
 	"testing"
 	"time"
@@ -114,6 +115,13 @@ func TestDemo5(t *testing.T) {
 
 	}
 }
+
+// TestDemo6
+//
+//	@Description: 根据文件大小滚动文件
+//	@Author yuhao
+//	@Data 2023-02-28 11:10:28
+//	@param t
 func TestDemo6(t *testing.T) {
 	logger := go_log.NewGoLog(&go_log.GoLogConfig{
 		LogLevel:       go_log.LoglevelDebug,
@@ -124,7 +132,7 @@ func TestDemo6(t *testing.T) {
 		ColorEnable:    true,
 		LogDir:         "./",
 		LogName:        "test3.log",
-		RollLogBySize:  2,
+		RollLogBySize:  20,
 	})
 	defer logger.Destroy()
 	for i := 0; i < 1000; i++ {
@@ -132,4 +140,24 @@ func TestDemo6(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 
 	}
+}
+
+func TestDemo7(t *testing.T) {
+	defaultGoLog := go_log.DefaultGoLog()
+	defaultGoLog.ColorEnable(false)
+	defer defaultGoLog.Destroy()
+	start := time.Now()
+	for i := 0; i < 10000; i++ {
+		defaultGoLog.Info("我的名字叫%s,我今年%d岁了", "二狗子", i)
+	}
+	defaultGoLog.Warn("cost:%v", time.Since(start))
+}
+
+func TestDemo8(t *testing.T) {
+	log.SetFlags(log.Lshortfile | log.Ldate | log.Ltime)
+	start := time.Now()
+	for i := 0; i < 10000; i++ {
+		log.Printf("我的名字叫%s,我今年%d岁了", "二狗子", i)
+	}
+	log.Printf("cost:%v", time.Since(start))
 }
