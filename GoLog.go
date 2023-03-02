@@ -348,7 +348,7 @@ func (g *GoLog) fileIdx(file string) string {
 //	@Description: 消费消息管道的消息
 //	@receiver g
 func (g *GoLog) consumeMsgChan() {
-	g.waiter.Add(1)
+	g.waiter.Add(2)
 	//  目录、文件名不为空 切没有结尾斜杠
 	if g.logDir != "" && g.logName != "" && !(strings.HasSuffix(g.logDir, "/") || strings.HasSuffix(g.logDir, "\\")) {
 		g.SetLogDir(g.logDir + "/")
@@ -395,17 +395,24 @@ func (g *GoLog) consumeMsgChan() {
 //	@Data 2023-02-28 11:30:47
 func (g *GoLog) compressLogFile() {
 
-	for s := range g.compressChan {
-		file, err := os.Open(s)
-		if err != nil {
-			_, _ = os.Stderr.WriteString("open file " + s + " failed,err:" + err.Error())
-			continue
+	for {
+		select {
+		case s, ok := <-g.compressChan:
+			if !ok {
+				g.waiter.Done()
+				return
+			}
+			file, err := os.Open(s)
+			if err != nil {
+				_, _ = os.Stderr.WriteString("open file " + s + " failed,err:" + err.Error())
+				continue
+			}
+			err = Compress([]*os.File{file}, s+".zip")
+			if err != nil {
+				_, _ = os.Stderr.WriteString("Compress file " + s + ".zip" + " failed,err:" + err.Error())
+			}
+			_ = os.Remove(s)
 		}
-		err = Compress([]*os.File{file}, s+".zip")
-		if err != nil {
-			_, _ = os.Stderr.WriteString("Compress file " + s + ".zip" + " failed,err:" + err.Error())
-		}
-		_ = os.Remove(s)
 	}
 
 }
