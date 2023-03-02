@@ -48,6 +48,7 @@ type GoLog struct {
 	lastTimeBlock  string                        //文件最后变更时间的时间块
 	logFileSize    int64                         //当前日志文件的大小
 	compressChan   chan string                   //压缩文件信号管道，将要压缩的文件名丢入管道
+	closeFlag      bool
 }
 
 // DefaultGoLog
@@ -118,7 +119,7 @@ func NewGoLog(config *GoLogConfig) ILogger {
 	return g
 }
 func (g *GoLog) Trace(format string, msg ...any) {
-	if g.logLevel.LevelNum() > LoglevelTrace.LevelNum() {
+	if g.logLevel.LevelNum() > LoglevelTrace.LevelNum() || g.closeFlag {
 		return
 	}
 	if _, file, line, ok := runtime.Caller(1); ok {
@@ -139,7 +140,7 @@ func (g *GoLog) Trace(format string, msg ...any) {
 }
 
 func (g *GoLog) Debug(format string, msg ...any) {
-	if g.logLevel.LevelNum() > LoglevelDebug.LevelNum() {
+	if g.logLevel.LevelNum() > LoglevelDebug.LevelNum() || g.closeFlag {
 		return
 	}
 	if _, file, line, ok := runtime.Caller(1); ok {
@@ -160,7 +161,7 @@ func (g *GoLog) Debug(format string, msg ...any) {
 }
 
 func (g *GoLog) Info(format string, msg ...any) {
-	if g.logLevel.LevelNum() > LoglevelInfo.LevelNum() {
+	if g.logLevel.LevelNum() > LoglevelInfo.LevelNum() || g.closeFlag {
 		return
 	}
 	if _, file, line, ok := runtime.Caller(1); ok {
@@ -181,7 +182,7 @@ func (g *GoLog) Info(format string, msg ...any) {
 }
 
 func (g *GoLog) Warn(format string, msg ...interface{}) {
-	if g.logLevel.LevelNum() > LoglevelWarn.LevelNum() {
+	if g.logLevel.LevelNum() > LoglevelWarn.LevelNum() || g.closeFlag {
 		return
 	}
 	if _, file, line, ok := runtime.Caller(1); ok {
@@ -202,7 +203,7 @@ func (g *GoLog) Warn(format string, msg ...interface{}) {
 }
 
 func (g *GoLog) Error(format string, msg ...interface{}) {
-	if g.logLevel.LevelNum() > LoglevelError.LevelNum() {
+	if g.logLevel.LevelNum() > LoglevelError.LevelNum() || g.closeFlag {
 		return
 	}
 	if _, file, line, ok := runtime.Caller(1); ok {
@@ -271,6 +272,7 @@ func (g *GoLog) ColorEnable(color bool) {
 }
 
 func (g *GoLog) Destroy() {
+	g.closeFlag = true
 	close(g.msgChan)
 	close(g.compressChan)
 	g.waiter.Wait()
