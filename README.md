@@ -11,7 +11,12 @@
 > defer defaultGoLog.Destroy()
 > ```
 
+#### 捐赠
+
+![扫我微信](./pay01.jpeg) ![扫我支付宝](./pay02.jpeg)
+
 #### 快速开始
+
 
 #### 安装
 
