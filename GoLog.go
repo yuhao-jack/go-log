@@ -272,6 +272,7 @@ func (g *GoLog) ColorEnable(color bool) {
 
 func (g *GoLog) Destroy() {
 	close(g.msgChan)
+	close(g.compressChan)
 	g.waiter.Wait()
 
 }
