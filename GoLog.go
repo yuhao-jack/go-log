@@ -350,7 +350,7 @@ func (g *GoLog) fileIdx(file string) string {
 //	@Description: 消费消息管道的消息
 //	@receiver g
 func (g *GoLog) consumeMsgChan() {
-	g.waiter.Add(2)
+	g.waiter.Add(1)
 	//  目录、文件名不为空 切没有结尾斜杠
 	if g.logDir != "" && g.logName != "" && !(strings.HasSuffix(g.logDir, "/") || strings.HasSuffix(g.logDir, "\\")) {
 		g.SetLogDir(g.logDir + "/")
@@ -359,7 +359,10 @@ func (g *GoLog) consumeMsgChan() {
 	if g.compressChan == nil {
 		g.compressChan = make(chan string, 2)
 	}
-	go g.compressLogFile()
+	if g.rollLogByTime != 0 || g.rollLogBySize != 0 {
+		go g.compressLogFile()
+
+	}
 	for {
 		select {
 		case msg, ok := <-g.msgChan:
@@ -396,7 +399,7 @@ func (g *GoLog) consumeMsgChan() {
 //	@Author yuhao
 //	@Data 2023-02-28 11:30:47
 func (g *GoLog) compressLogFile() {
-
+	g.waiter.Add(1)
 	for {
 		select {
 		case s, ok := <-g.compressChan:
