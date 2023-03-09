@@ -274,7 +274,9 @@ func (g *GoLog) ColorEnable(color bool) {
 func (g *GoLog) Destroy() {
 	g.closeFlag = true
 	close(g.msgChan)
-	close(g.compressChan)
+	if g.compressChan != nil {
+		close(g.compressChan)
+	}
 	g.waiter.Wait()
 
 }
@@ -356,12 +358,12 @@ func (g *GoLog) consumeMsgChan() {
 		g.SetLogDir(g.logDir + "/")
 		g.setLogName(g.logDir + g.logName)
 	}
-	if g.compressChan == nil {
-		g.compressChan = make(chan string, 2)
-	}
+
 	if g.rollLogByTime != 0 || g.rollLogBySize != 0 {
 		go g.compressLogFile()
-
+		if g.compressChan == nil {
+			g.compressChan = make(chan string, 2)
+		}
 	}
 	for {
 		select {
