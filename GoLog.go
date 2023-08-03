@@ -272,6 +272,9 @@ func (g *GoLog) ColorEnable(color bool) {
 }
 
 func (g *GoLog) Destroy() {
+	if g.closeFlag == true {
+		return
+	}
 	g.closeFlag = true
 	close(g.msgChan)
 	if g.compressChan != nil {
